@@ -1,3 +1,4 @@
+#!/usr/bin/python
 
 # ##################################################
 # import
@@ -25,8 +26,10 @@ class Request:
         self.database_name = None
         self.query_id = None
         self.query = None
-        self.fetch_one = None
-        self.fetch_all = None
+        self.fetch_one = False
+        self.fetch_all = False
+        self.fetch_oid = False
+        self.fetch_count = False
         self.parameters = None
 
     # ##################################################
@@ -34,25 +37,27 @@ class Request:
     
     def extract( self ):
         self.config.read( 'lite.ini' )
-        self.database_name = self.extract_from_request( 'db' )
-        self.query_id = self.extract_from_request( 'query' )
-        self.query = self.extract_from_config( self.database_name, self.query_id )
-        self.fetch_one = self.extract_fetch( 'one', 'item' )
-        self.fetch_all = self.extract_fetch( 'all', 'items' )
-        self.parameters = self.extract_parameters_from_query()
+        self.database_name = self.extract_request_parameter( 'db' )
+        self.query_id = self.extract_request_parameter( 'query' )
+        self.query = self.extract_config_parameter( self.database_name, self.query_id )
+        self.fetch_one = self.extract_adapter( 'one', [] )
+        self.fetch_all = self.extract_adapter( 'all', [ 'SELECT' ] )
+        self.fetch_oid = self.extract_adapter( 'oid', [ 'INSERT' ] )
+        self.fetch_count = self.extract_adapter( 'count', [ 'UPDATE', 'DELETE' ] )
+        self.parameters = self.extract_query_parameters()
 
     # ##################################################
-    # extract_from_request
+    # extract_request_parameter
 
-    def extract_from_request( self, key ):
+    def extract_request_parameter( self, key ):
         if key not in self.request:
             raise Exception( 'missing parameter %s' % key )
         return self.request[ key ].value
 
     # ##################################################
-    # extract_from_config
+    # extract_config_parameter
 
-    def extract_from_config( self, section, key, mandatory = True ):
+    def extract_config_parameter( self, section, key, mandatory = True ):
         if not self.config.has_section( section ):
             raise Exception( 'missing section %s' % section )
         if not self.config.has_option( section, key ):
@@ -60,37 +65,36 @@ class Request:
         return self.config.get( section, key )
 
     # ##################################################
-    # extract_fetch
+    # extract_adapter
 
-    def extract_fetch( self, key, default_value ):
-        pattern = '\s*\|\s*%s\s*\|\s*(\w+)\s*$' % key
-        match = re.search( pattern, self.query, re.IGNORECASE )
-        if match:
-            value = match.group(1)
-            self.query = re.sub( pattern, '', self.query, 1, re.IGNORECASE )
-            if value is None or value == '':
-                return default_value
-            return value
-        pattern = '\s*\|\s*%s\s*$' % key
-        match = re.search( pattern, self.query, re.IGNORECASE )
-        if match:
-            self.query = re.sub( pattern, '', self.query, 1, re.IGNORECASE )
-            return default_value
-        return None
+    def extract_adapter( self, key, query_types ):
+        if key is not None:
+            regexp = re.compile( '\s*\|\s*%s\s*' % ( key ), re.IGNORECASE )
+            if regexp.search( self.query ):
+                self.query = regexp.sub( '', self.query, 1 )
+                return True
+        if query_types is not None and len(query_types) > 0 :
+            regexp = re.compile( '^\s*(%s)\s*' % ( '|'.join( query_types ) ), re.IGNORECASE )
+            if regexp.search( self.query ):
+                return True
+        return False
 
     # ##################################################
-    # extract_parameters_from_query
+    # extract_query_parameters
 
-    def extract_parameters_from_query( self ):
-        pattern = '%(\w*)%'
+    def extract_query_parameters( self ):
+        regexp = re.compile( '%(\w*)%' )
         parameters = []
-        match = re.search( pattern, self.query )
+        match = regexp.search( self.query )
         while match:
             key = match.group(1)
-            value = self.extract_from_request( key )
-            parameters.append( value )
-            self.query = re.sub( pattern, '?', self.query, 1 )
-            match = re.search( pattern, self.query )
+            value = self.extract_request_parameter( key )
+            if key in [ 'table' ]:
+                self.query = regexp.sub( value, self.query, 1 )
+            else:
+                parameters.append( value )
+                self.query = regexp.sub( '?', self.query, 1 )
+            match = regexp.search( self.query )
         return parameters
 
 
@@ -164,16 +168,10 @@ class Database:
         
         self.cursor = self.connection.cursor()
             
-        if query.find( ';' ) != -1:
-            if len( args ):
-                self.cursor.executescript( query, args )
-            else:
-                self.cursor.executescript( query )
+        if len( args ):
+            self.cursor.execute( query, args )
         else:
-            if len( args ):
-                self.cursor.execute( query, args )
-            else:
-                self.cursor.execute( query )
+            self.cursor.execute( query )
 
     # ##################################################
     # fetch_oid
@@ -320,24 +318,22 @@ class Usecase:
             database.execute( self.request.query, *self.request.parameters )
             
             # fetch oid
-            oid = database.fetch_oid()
-            if oid is not None:
-                self.response[ 'oid' ] = oid
+            if self.request.fetch_oid:
+                self.response[ 'oid' ] = database.fetch_oid()
             
             # fetch count
-            count = database.fetch_count()
-            if count is not None:
-                self.response[ 'count' ] = count
+            if self.request.fetch_count:
+                self.response[ 'count' ] = database.fetch_count()
             
-            # fetch item
-            if self.request.fetch_one is not None:
-                value = database.fetch_one()
-                self.response[ self.request.fetch_one ] = value
-            
-            # fetch items
-            if self.request.fetch_all is not None:
-                value = database.fetch_all()
-                self.response[ self.request.fetch_all ] = value
+            # fetch item or items
+            if self.request.fetch_one:
+                self.response[ 'row' ] = database.fetch_one()
+            elif self.request.fetch_all:
+                self.response[ 'rows' ] = database.fetch_all()
+                
+            # self.response[ 'query' ] = self.request.query
+            # self.response[ 'parameters' ] = self.request.parameters
+            # self.response[ 'version' ] = sys.version
             
 
 

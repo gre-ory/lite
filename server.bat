@@ -1,1 +1,2 @@
-python -m CGIHTTPServer 9999
+python server.py
+PAUSE
