@@ -2,3 +2,13 @@
 AddHandler cgi-script .py
 
 DirectoryIndex lite.py
+
+<Files *.ini>
+order allow,deny
+deny from all
+</Files>
+
+<Files *.db>
+order allow,deny
+deny from all
+</Files>

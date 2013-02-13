@@ -20,9 +20,10 @@ class Request:
     # ##################################################
     # constructor
     
-    def __init__( self ):
+    def __init__( self, config_file ):
         self.request = cgi.FieldStorage()
         self.config = ConfigParser.ConfigParser()
+        self.config.read( config_file )
         self.database_name = None
         self.query_id = None
         self.query = None
@@ -36,12 +37,11 @@ class Request:
     # extract
     
     def extract( self ):
-        self.config.read( 'lite.ini' )
         self.database_name = self.extract_request_parameter( 'db' )
         self.query_id = self.extract_request_parameter( 'query' )
         self.query = self.extract_config_parameter( self.database_name, self.query_id )
         self.fetch_one = self.extract_adapter( 'one', [] )
-        self.fetch_all = self.extract_adapter( 'all', [ 'SELECT' ] )
+        self.fetch_all = self.extract_adapter( 'all', [ 'SELECT' ] ) and not self.fetch_one
         self.fetch_oid = self.extract_adapter( 'oid', [ 'INSERT' ] )
         self.fetch_count = self.extract_adapter( 'count', [ 'UPDATE', 'DELETE' ] )
         self.parameters = self.extract_query_parameters()
@@ -49,9 +49,11 @@ class Request:
     # ##################################################
     # extract_request_parameter
 
-    def extract_request_parameter( self, key ):
+    def extract_request_parameter( self, key, mandatory=True ):
         if key not in self.request:
-            raise Exception( 'missing parameter %s' % key )
+            if mandatory:
+                raise Exception( 'missing parameter %s' % key )
+            return None
         return self.request[ key ].value
 
     # ##################################################
@@ -71,7 +73,7 @@ class Request:
         if key is not None:
             regexp = re.compile( '\s*\|\s*%s\s*' % ( key ), re.IGNORECASE )
             if regexp.search( self.query ):
-                self.query = regexp.sub( '', self.query, 1 )
+                self.query = regexp.sub( '', self.query )
                 return True
         if query_types is not None and len(query_types) > 0 :
             regexp = re.compile( '^\s*(%s)\s*' % ( '|'.join( query_types ) ), re.IGNORECASE )
@@ -83,13 +85,14 @@ class Request:
     # extract_query_parameters
 
     def extract_query_parameters( self ):
-        regexp = re.compile( '%(\w*)%' )
         parameters = []
+        regexp = re.compile( '%(\w*)%' )
         match = regexp.search( self.query )
         while match:
             key = match.group(1)
-            value = self.extract_request_parameter( key )
-            if key in [ 'table' ]:
+            special_value = ( key in [ 'table' ] )
+            value = self.extract_request_parameter( key, special_value )
+            if special_value:
                 self.query = regexp.sub( value, self.query, 1 )
             else:
                 parameters.append( value )
@@ -211,7 +214,8 @@ class Database:
         keys = [ column[0] for column in self.cursor.description ]
         index = 0
         for value in row:
-            item[ keys[ index ] ] = value
+            if value is not None:
+                item[ keys[ index ] ] = value
             index = index + 1
         return item
 
@@ -231,7 +235,8 @@ class Database:
             item = {}
             index = 0
             for value in row:
-                item[ keys[ index ] ] = value
+                if value is not None:
+                    item[ keys[ index ] ] = value
                 index = index + 1
             items.append( item )
         
@@ -279,9 +284,9 @@ class Usecase:
     # ##################################################
     # constructor
     
-    def __init__( self ):
-        self.request = Request()
-        self.response = Response()
+    def __init__( self, request, response ):
+        self.request = request
+        self.response = response
 
     # ##################################################
     # set up
@@ -296,7 +301,7 @@ class Usecase:
     def __exit__( self, type, value, traceback ):
         if value is not None:
             self.response.success = False
-            self.response.error = value.args[0]
+            self.response.error = '%s' % value
         else:
             self.response.success = True
         self.response.dump()
@@ -311,6 +316,7 @@ class Usecase:
         self.request.extract()
         # self.response.query = self.request.query
         # self.response.parameters = self.request.parameters
+        # self.response.version = sys.version
         
         with Database( self.request.database_name ) as database:
             
@@ -325,22 +331,20 @@ class Usecase:
             if self.request.fetch_count:
                 self.response[ 'count' ] = database.fetch_count()
             
-            # fetch item or items
+            # fetch one row
             if self.request.fetch_one:
                 self.response[ 'row' ] = database.fetch_one()
-            elif self.request.fetch_all:
-                self.response[ 'rows' ] = database.fetch_all()
-                
-            # self.response[ 'query' ] = self.request.query
-            # self.response[ 'parameters' ] = self.request.parameters
-            # self.response[ 'version' ] = sys.version
             
+            # fetch all rows
+            if self.request.fetch_all:
+                self.response[ 'rows' ] = database.fetch_all()                
 
 
+            
 # ##################################################
-# execute
-
-with Usecase() as uc:
-    uc.execute()
-
+# main
+    
+if __name__ == '__main__':
+    with Usecase( Request( 'lite.ini' ), Response() ) as uc:
+        uc.execute()
 
