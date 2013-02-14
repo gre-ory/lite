@@ -50,10 +50,14 @@ class LiteUnitTest( unittest.TestCase ):
     # ##################################################
     # execute
     
-    def execute( self, **kwargs ):
+    def execute( self, db='test', tb='test', **kwargs ):
+        if db is not None:
+            kwargs[ 'db' ] = db
+        if tb is not None:
+            kwargs[ 'tb' ] = tb
         os.environ[ 'QUERY_STRING' ] = '&'.join( [ '%s=%s' % ( key, kwargs[key] ) for key in kwargs ] )
         os.environ[ 'REQUEST_METHOD' ] = 'GET'
-        self.request = lite.Request( 'test.ini' )
+        self.request = lite.Request()
         self.response = FakeResponse()
         try:
             with lite.Usecase( self.request, self.response ) as usecase:
@@ -96,96 +100,97 @@ class LiteUnitTest( unittest.TestCase ):
     # test
     
     def test_00_drop_table( self ):
-        self.execute( db='test', query='drop', table='test' )
+        self.execute( qr='drop.table' )
         self.assert_request( 'DROP TABLE IF EXISTS test' )
         self.assert_response( True )
 
     def test_01_create_table( self ):
-        self.execute( db='test', query='create.table' )
+        self.execute( qr='create.table' )
         self.assert_request( 'CREATE TABLE test ( oid INTEGER PRIMARY KEY, key TEXT NOT NULL, value TEXT )' )
         self.assert_response( True )
 
     def test_10_insert( self ):
-        self.execute( db='test', query='insert', key='one', value='un' )
+        self.execute( qr='insert', key='one', value='un' )
         self.assert_request( 'INSERT INTO test ( key, value ) VALUES ( ?, ? )', [ 'one', 'un' ], fetch_oid = True )
         self.assert_response( True, oid=1 )
 
     def test_11_insert( self ):
-        self.execute( db='test', query='insert', key='two', value='deux' )
+        self.execute( qr='insert', key='two', value='deux' )
         self.assert_request( 'INSERT INTO test ( key, value ) VALUES ( ?, ? )', [ 'two', 'deux' ], fetch_oid = True )
         self.assert_response( True, oid=2 )
 
     def test_12_insert( self ):
-        self.execute( db='test', query='insert', key='two', value='duo' )
+        self.execute( qr='insert', key='two', value='duo' )
         self.assert_request( 'INSERT INTO test ( key, value ) VALUES ( ?, ? )', [ 'two', 'duo' ], fetch_oid = True )
         self.assert_response( True, oid=3 )
     
     def test_13_insert_with_missing_key( self ):
-        self.execute( db='test', query='insert', value='something' )
+        self.execute( qr='insert', value='something' )
         self.assert_request( 'INSERT INTO test ( key, value ) VALUES ( ?, ? )', [ None, 'something' ], fetch_oid = True )
         self.assert_response( False, error='test.key may not be NULL', oid=None )
         
     def test_20_missing_parameter( self ):
-        self.execute( db='test', query='select.one', table='test' )
+        self.execute( qr='select.one' )
         self.assert_request( 'SELECT * FROM test WHERE oid = ?', [ None ], fetch_one = True )
         self.assert_response( False, error='row not found' )
         
     def test_21_select_one( self ):
-        self.execute( db='test', query='select.one', table='test', oid='1' )
+        self.execute( qr='select.one', oid='1' )
         self.assert_request( 'SELECT * FROM test WHERE oid = ?', [ '1' ], fetch_one = True )
         self.assert_response( True, row={'oid': 1, 'value': 'un', 'key': 'one'} )
 
     def test_22_select_one_ignorecase( self ):
-        self.execute( db='test', query='select.one.ignorecase', table='test', oid='1' )
+        self.execute( qr='select.one.ignorecase', oid='1' )
         self.assert_request( 'SELECT * FROM test WHERE oid = ?', [ '1' ], fetch_one = True )
         self.assert_response( True, row={'oid': 1, 'value': 'un', 'key': 'one'} )
 
     def test_23_select_all( self ):
-        self.execute( db='test', query='select.all', table='test' )
+        self.execute( qr='select.all' )
         self.assert_request( 'SELECT * FROM test', fetch_all = True )
         self.assert_response( True, rows=[{'oid': 1, 'value': 'un', 'key': 'one'}, {'oid': 2, 'value': 'deux', 'key': 'two'}, {'oid': 3, 'value': 'duo', 'key': 'two'}] )
 
     def test_24_count( self ):
-        self.execute( db='test', query='count', key='one' )
+        self.execute( qr='count', key='one' )
         self.assert_request( 'SELECT COUNT(*) AS nb FROM test WHERE key = ?', [ 'one' ], fetch_one = True, fetch_oid = True, fetch_count = True  )
         self.assert_response( True, row={'nb': 1} )
 
     def test_25_select_one( self ):
-        self.execute( db='test', query='select.one', table='test', oid='99' )
+        self.execute( qr='select.one', oid='99' )
         self.assert_request( 'SELECT * FROM test WHERE oid = ?', [ '99' ], fetch_one = True )
         self.assert_response( False, error='row not found' )
                 
     def test_30_update( self ):
-        self.execute( db='test', query='update', key='one', value='uno' )
+        self.execute( qr='update', key='one', value='uno' )
         self.assert_request( 'UPDATE test SET value = ? WHERE key = ?', [ 'uno', 'one' ], fetch_count = True )
         self.assert_response( True, count=1 )
 
     def test_31_select_one( self ):
-        self.execute( db='test', query='select.one', table='test', oid='1' )
+        self.execute( qr='select.one', oid='1' )
         self.assert_request( 'SELECT * FROM test WHERE oid = ?', [ '1' ], fetch_one = True )
         self.assert_response( True, row={'oid': 1, 'value': 'uno', 'key': 'one'} )
         
     def test_40_delete( self ):
-        self.execute( db='test', query='delete', table='test', oid='1' )
+        self.execute( qr='delete', oid='1' )
         self.assert_request( 'DELETE FROM test WHERE oid = ?', [ '1' ], fetch_count = True )
         self.assert_response( True, count=1 )
 
     def test_41_delete_all( self ):
-        self.execute( db='test', query='delete.all', table='test' )
+        self.execute( qr='delete.all' )
         self.assert_request( 'DELETE FROM test', fetch_count = True )
         self.assert_response( True, count=2 )
 
     def test_90_missing_db( self ):
-        self.execute( query='drop', table='test' )
+        self.execute( db=None, qr='drop' )
         self.assert_response( False, error='missing parameter db' )
 
-    def test_91_missing_query( self ):
-        self.execute( db='test', table='test' )
-        self.assert_response( False, error='missing parameter query' )
-
     def test_92_missing_table( self ):
-        self.execute( db='test', query='drop' )
-        self.assert_response( False, error='missing parameter table' )
+        self.execute( tb=None, qr='drop' )
+        self.assert_response( False, error='missing parameter tb' )
+        
+    def test_91_missing_query( self ):
+        self.execute()
+        self.assert_response( False, error='missing parameter qr' )
+
 
 
 

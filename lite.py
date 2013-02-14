@@ -20,11 +20,11 @@ class Request:
     # ##################################################
     # constructor
     
-    def __init__( self, config_file ):
+    def __init__( self ):
         self.request = cgi.FieldStorage()
         self.config = ConfigParser.ConfigParser()
-        self.config.read( config_file )
         self.database_name = None
+        self.table_name = None
         self.query_id = None
         self.query = None
         self.fetch_one = False
@@ -38,8 +38,10 @@ class Request:
     
     def extract( self ):
         self.database_name = self.extract_request_parameter( 'db' )
-        self.query_id = self.extract_request_parameter( 'query' )
-        self.query = self.extract_config_parameter( self.database_name, self.query_id )
+        self.config.read( '%s.ini' % self.database_name )
+        self.table_name = self.extract_request_parameter( 'tb' )
+        self.query_id = self.extract_request_parameter( 'qr' )
+        self.query = self.extract_config_parameter( self.table_name, self.query_id )
         self.fetch_one = self.extract_adapter( 'one', [] )
         self.fetch_all = self.extract_adapter( 'all', [ 'SELECT' ] ) and not self.fetch_one
         self.fetch_oid = self.extract_adapter( 'oid', [ 'INSERT' ] )
@@ -90,7 +92,7 @@ class Request:
         match = regexp.search( self.query )
         while match:
             key = match.group(1)
-            special_value = ( key in [ 'table' ] )
+            special_value = ( key in [ 'db', 'tb', 'qr' ] )
             value = self.extract_request_parameter( key, special_value )
             if special_value:
                 self.query = regexp.sub( value, self.query, 1 )
@@ -345,6 +347,6 @@ class Usecase:
 # main
     
 if __name__ == '__main__':
-    with Usecase( Request( 'lite.ini' ), Response() ) as uc:
+    with Usecase( Request(), Response() ) as uc:
         uc.execute()
 
