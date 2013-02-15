@@ -12,7 +12,7 @@ import cgitb; cgitb.enable()
 # handler
 
 class Handler(CGIHTTPRequestHandler):
-    cgi_directories = [ '/' ]
+    cgi_directories = [ '' ]
 
 
 
