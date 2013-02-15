@@ -263,9 +263,9 @@ class Request:
         if sql is None:
             raise Exception( 'missing option %s in section %s in %s' % ( option, section, config_file ) )
         
-        self.multi = ';' in sql
-        for sql_query in [ s.strip() for s in sql.split( ';' ) if s.strip() != '' ]:
-            
+        sql_queries = [ s.strip() for s in sql.split( ';' ) if s.strip() != '' ]
+        self.multi = ( len( sql_queries ) > 1 )
+        for sql_query in sql_queries:
             # extract sql_parameters from request
             sql_parameters = []
             regexp = re.compile( '%(\w*)%' )
@@ -407,7 +407,7 @@ class Usecase:
     # execute
     
     def execute( self ):
-        
+
         # prepare sql query
         self.request.build_query()
         

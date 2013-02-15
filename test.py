@@ -40,6 +40,7 @@ class LiteUnitTest( unittest.TestCase ):
         self.assertTrue( self.usecase.request is not None )
         self.assertEqual( self.usecase.request.database, database )
         self.assertEqual( self.usecase.request.table, table )
+        self.assertEqual( self.usecase.request.multi, len(self.usecase.request.queries) > 1 )
         self.assertTrue( self.index < len(self.usecase.request.queries) )
         query = self.usecase.request.queries[ self.index ]
         self.assertTrue( query is not None )
