@@ -13,6 +13,15 @@ import cgitb; cgitb.enable()
 
 class Handler(CGIHTTPRequestHandler):
     cgi_directories = [ '' ]
+    
+    def is_cgi( self ):
+        if self.path.endswith( '.py' ):
+            path = self.path.split( '/' )
+            file_name = path.pop() 
+            self.cgi_info = ( '%s/' % '/'.join( path ), file_name )
+            print '[is_cgi] %s >>> %s ' % ( self.path, self.cgi_info )
+            return True
+        return False
 
 
 
